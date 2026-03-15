@@ -34,10 +34,14 @@ class Beta(eqx.Module):
 class NODE(eqx.Module):
     beta: Beta
 
+    state_vec: jnp.ndarray
+
     scales: jnp.ndarray = eqx.field(static=True)
 
     def __init__(self, width_size, depth, scales, *, key):
         self.beta = Beta(width_size, depth, key=key)
+
+        self.state_vec = jnp.array([5., -5., 0., -5., -5])
 
         self.scales = scales
 
@@ -69,10 +73,11 @@ class NODE(eqx.Module):
 
         return dstate_norm
     
-    def __call__(self, y0, ts):
+    def __call__(self, y0_ignored, ts):
+        y0_learned = jnn.softmax(self.state_vec)
 
         # normalize initial condition
-        y0_norm = y0 / self.scales
+        y0_norm = y0_learned / self.scales
 
         sol = diffrax.diffeqsolve(
             diffrax.ODETerm(self.RHS),
@@ -128,9 +133,10 @@ class Experiment(BaseExperiment):
 ########## Evaluation ##########
 
 def Evaluation(EX, ts_eval, loss_list, viz_data=False):
-    y0, ts_data, ys_data, model = EX.y0, EX.ts, EX.ys, EX.model
+    ts_data, ys_data, model = EX.ts, EX.ys, EX.model
+    y0=jnp.array([1e+0, 0., 1e-6, 0., 0.])
     ys_eval = get_data(ts_eval, y0, EX.beta)
-    ys_pred = model(y0, ts_eval)
+    ys_pred = model(None, ts_eval)
     beta_eval = EX.beta(ts_eval)
     beta_pred = jax.vmap(lambda t: model.beta(jnp.array([t])))(ts_eval)
 

@@ -19,7 +19,7 @@ class Dynamics(eqx.Module):
     def __init__(self, hidden_dim, width_size, depth, *, key):
         self.scale = jnp.array(0.1)
         self.mlp = eqx.nn.MLP(
-            in_size=hidden_dim,
+            in_size=hidden_dim+5,
             out_size=hidden_dim,
             width_size=width_size,
             depth=depth,
@@ -91,7 +91,7 @@ class LatentODE(eqx.Module):
         # normalize derivative
         dstate = scales_dstate / self.scales
 
-        dh = self.hidden_dyn(t, h, args)
+        dh = self.hidden_dyn(t, jnp.concatenate([h, scales_state]), args)
 
         return (dstate, dh)
     
