@@ -1,18 +1,18 @@
-########## module import ##########
+######## module import ########
 import jax
-import jax.random as jr
+import jax. random as jr
 import jax.numpy as jnp
 import jax.nn as jnn
 
 import equinox as eqx
 import diffrax
 
+#BaseExperiment, make_logger, beta_generate, get_data, SEIAR, plotting
 from .utiles import *
 
-########## model define ##########
+######## model define ########
 
-# dynamics term of hidden state
-class Dyn(eqx.Module):
+class Dynamics(eqx.Module):
     scale: jnp.ndarray
     mlp: eqx.nn.MLP
 
@@ -23,73 +23,47 @@ class Dyn(eqx.Module):
             out_size=hidden_dim,
             width_size=width_size,
             depth=depth,
-            activation=lambda x: jnn.sigmoid(x),
-            final_activation=lambda x: jnn.tanh(x), 
+            activation=lambda x: jnn.softplus(x),
+            final_activation=lambda x: jnn.tanh(0.0001*x),
             key=key,
         )
     
     def __call__(self, t, h, args=None):
-        # tvec = jnp.array([t])
-        # input = jnp.concatenate([tvec, z])
-        # return self.scale * self.mlp(input)
         return self.scale * self.mlp(h)
     
-class Func(eqx.Module):
-    mlp: eqx.nn.MLP
-
-    def __init__(self, in_size, out_size, final_activation=None, *, key):
-        if final_activation is None:
-            final_activation = lambda x: x
-
-        self.mlp = eqx.nn.MLP(
-            in_size=in_size,
-            out_size=out_size,
-            width_size=64,
-            depth=2,
-            activation=jnn.sigmoid,
-            final_activation=final_activation, 
-            key=key,
-        )
-    
-    def __call__(self, y):
-        return self.mlp(y)
-    
 class Argphy(eqx.Module):
-    dbb: Dyn
+    hidden_dyn: Dynamics
+    hidden_vec: jnp.ndarray
+    hidden_to_beta: eqx.nn.Linear
+
+    scales: jnp.ndarray = eqx.field(static=True)
     
-    latent_to_state: Func
-    latent_to_hidden: Func
+    def __init__(self, hidden_dim, width_size, depth, scales, *, key):
+        dyn_key, htb_key, hvec_key = jr.split(key, 3)
 
-    hidden_to_beta: Func
+        self.hidden_dyn = Dynamics(hidden_dim, width_size, depth, key=dyn_key)
+        self.hidden_vec = 0.01 * jr.normal(hvec_key, (hidden_dim,))
+        self.hidden_to_beta = eqx.nn.Linear(hidden_dim, 1, key=htb_key)
 
-    latent_vec: jnp.ndarray
+        self.scales = scales
 
-    def __init__(self, latent_dim, hidden_dim, width_size, depth, *, key):
-        mlp_key, lts_key, lth_key, htb_key, vec_key= jr.split(key, 5)
+    def get_beta(self, h):
+        beta = jnn.sigmoid(self.hidden_to_beta(h))
+        return beta.squeeze()
+    
+    def RHS(self, t, y, args=None):
 
-        self.dbb = Dyn(hidden_dim, width_size, depth, key=mlp_key)                                # define beta dynamics
+        state_norm, h = y
 
-        self.latent_to_state = Func(latent_dim, 5, key=lts_key)                                   # latnet vector -> state initial
-        self.latent_to_hidden = Func(latent_dim, hidden_dim, key=lth_key)                         # latent vector -> hidden initial
+        # denormalize state
+        state = state_norm * self.scales
 
-        self.hidden_to_beta = Func(hidden_dim, 1,
-                                   final_activation=lambda x: 3.0 * jnn.sigmoid(x),
-                                   key=htb_key)                                                   # hidden -> beta
-
-        self.latent_vec = jnp.array(jr.uniform(vec_key, (latent_dim,), minval=0., maxval=1.))     # define latent vector for random
-        # self.latent_vec = jnp.array([1., 0., 1e-6, 0, 0])
-
-    # Use total population is 1 for initial value
-    def initial(self, latent):
-        raw = self.latent_to_state(latent)
-        return jnn.softmax(raw)
-
-    def dynamics(self, t, y, args=None):
-        state, h = y
         S, E, I, A, R = state
-        beta = self.hidden_to_beta(h).squeeze()
+
+        beta = self.get_beta(h)
 
         kk, aa, ii, p, f, ee, dd, q = 0.526, 0.244, 0.244, 0.667, 0.98, 0.0, 1.0, 0.5
+
         LL = ee * E + (1 - q) * I + dd * A
 
         dS = -beta * S * LL
@@ -97,75 +71,83 @@ class Argphy(eqx.Module):
         dI = p * kk * E - aa * I
         dA = (1 - p) * kk * E - ii * A
         dR = f * aa * I + ii * A
-        
-        dh = self.dbb(t, h, args)
-        return (jnp.array([dS, dE, dI, dA, dR]), dh)
-    
-    def __call__(self, ts, y0_=None, y0_use=False):
-        if y0_use:
-            y0 = y0_
-        else:
-            y0 = self.initial(self.latent_vec)
 
-        h0 = self.latent_to_hidden(self.latent_vec)
-        
-        sol = diffrax.diffeqsolve(
-            diffrax.ODETerm(self.dynamics),
-            diffrax.Tsit5(),
-            t0=0,
-            t1=ts[-1],
-            dt0=0.1,
-            y0=(y0, h0),
-            saveat=diffrax.SaveAt(ts=ts),
-            stepsize_controller=diffrax.PIDController(rtol=1e-2, atol=1e-4),
-            max_steps=50000, 
-        )
-        return sol.ys # (seiar_traj, z_traj)
+        dstate = jnp.array([dS, dE, dI, dA, dR])
+
+        # normalize derivative
+        dstate_norm = dstate / self.scales
+
+        dh = self.hidden_dyn(t, h, args)
+
+        return (dstate_norm, dh)
     
+    def __call__(self, y0, ts):
+
+        # normalize initial condition
+        y0_norm = y0 / self.scales
+
+        h0 = self.hidden_vec
+
+        sol = diffrax.diffeqsolve(
+            diffrax.ODETerm(self.RHS),
+            diffrax.Tsit5(),
+            t0=ts[0],
+            t1=ts[-1],
+            dt0=0.001,
+            y0=(y0_norm, h0),
+            saveat=diffrax.SaveAt(ts=ts),
+            stepsize_controller=diffrax.PIDController(rtol=1e-3, atol=1e-6),
+            adjoint=diffrax.RecursiveCheckpointAdjoint(),
+            max_steps=50000,
+        )
+
+        states_norm, h = sol.ys
+
+        # denormalize output
+        states = states_norm * self.scales
+
+        return states, h
+
 ########## Experiment ##########
 class Experiment(BaseExperiment):
-    def __init__(self, y0, ts, ys, beta, latent_dim=8, hidden_dim=2, width_size=64, depth=2, I_only=False, y0_use=False, **kwargs):
-        seed = kwargs.get('seed', 5678)
-        model = Argphy(latent_dim, hidden_dim, width_size, depth, key=jr.PRNGKey(seed))
-        
-        super().__init__(model, y0, ts, ys, **kwargs)
-        
-        # Not use training, but save info for evaluation
-        self.y0 = y0
+
+    def __init__(self, ts, ys, beta, hidden_dim=8, width_size=64, depth=2, **kwargs):
+
+        seed = kwargs.get("seed", 5678)
+
+        # normalization scale
+        self.scales = jnp.max(ys, axis=0) + 1e-6
+
+        model = Argphy(
+            hidden_dim,
+            width_size,
+            depth,
+            scales=self.scales,
+            key=jax.random.PRNGKey(seed)
+        )
+
+        super().__init__(model, ts, ys, **kwargs)
+
+        self.y0 = ys[0]
         self.beta = beta
-        
-        # for variation experiments
-        self.I_only = I_only
-        self.y0_use = y0_use
 
     def loss_fn(self, model, ts, ys):
-        pred, _ = model(ts, y0_=self.y0, y0_use=self.y0_use)
 
-        eps = 1e-6
+        pred, _ = model(self.y0, ts)
 
-        if self.I_only:
-            pred = jnp.clip(pred[:, 2:3], eps, None)
-            ys = jnp.clip(ys, eps, None)
+        loss = jnp.mean((pred - ys) ** 2)
 
-            loss = jnp.mean((jnp.log(pred) - jnp.log(ys))**2)
-
-        else:
-            pred = jnp.clip(pred, eps, None)
-            ys = jnp.clip(ys, eps, None)
-
-            loss = jnp.mean((jnp.log(pred) - jnp.log(ys))**2)
-
-        return loss, None
-
+        return loss
+    
 ########## Evaluation ##########
 
 def Evaluation(EX, ts_eval, loss_list, viz_data=False):
-    y0, ts_data, ys_data, beta, model, I_only = EX.y0, EX.ts, EX.ys, EX.beta, EX.model, EX.I_only
+    y0, ts_data, ys_data, beta, model = EX.y0, EX.ts, EX.ys, EX.beta, EX.model
 
     ys_eval = get_data(ts_eval, y0, beta)
-    ys_pred, z_pred = model(ts_eval)
+    ys_pred, h_pred = model(y0, ts_eval)
 
     beta_eval = EX.beta(ts_eval)
-    beta_pred = jax.vmap(model.hidden_to_beta)(z_pred)
+    beta_pred = jax.vmap(model.get_beta)(h_pred)
 
-    plotting(ts_data, ys_data, ts_eval, ys_eval, ys_pred, beta_eval, beta_pred, loss_list, I_only, viz_data)
+    plotting(ts_data, ys_data, ts_eval, ys_eval, ys_pred, beta_eval, beta_pred, loss_list, viz_data)

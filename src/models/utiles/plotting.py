@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 def relative_error(pred, true):
     return jnp.linalg.norm(pred - true, 2) / jnp.linalg.norm(true, 2)
 
-def plotting(ts_data, ys_data, ts_eval, ys_eval, ys_pred, beta_eval, beta_pred, loss_list, I_only, viz_data):
+def plotting(ts_data, ys_data, ts_eval, ys_eval, ys_pred, beta_eval, beta_pred, loss_list, viz_data):
     rel_S = relative_error(ys_pred[:, 0], ys_eval[:, 0])
     rel_E = relative_error(ys_pred[:, 1], ys_eval[:, 1])
     rel_I = relative_error(ys_pred[:, 2], ys_eval[:, 2])
@@ -45,14 +45,11 @@ def plotting(ts_data, ys_data, ts_eval, ys_eval, ys_pred, beta_eval, beta_pred, 
     axs[1][2].set_title("Training Loss")
 
     if viz_data == True:
-        if I_only:
-            axs[0][2].plot(ts_data, ys_data[:,2], label="data")
-        else:
-            axs[0][0].plot(ts_data, ys_data[:,0], label="data")
-            axs[0][1].plot(ts_data, ys_data[:,1], label="data")
-            axs[0][2].plot(ts_data, ys_data[:,2], label="data")
-            axs[1][0].plot(ts_data, ys_data[:,3], label="data")
-            axs[1][1].plot(ts_data, ys_data[:,4], label="data")
+        axs[0][0].plot(ts_data, ys_data[:,0], label="data")
+        axs[0][1].plot(ts_data, ys_data[:,1], label="data")
+        axs[0][2].plot(ts_data, ys_data[:,2], label="data")
+        axs[1][0].plot(ts_data, ys_data[:,3], label="data")
+        axs[1][1].plot(ts_data, ys_data[:,4], label="data")
 
     plt.figure(figsize=(5, 5))
     plt.plot(ts_eval, beta_eval, label="True beta")

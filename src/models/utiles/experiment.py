@@ -106,7 +106,7 @@ class BaseExperiment:
     Base training experiment class.
     """
 
-    def __init__(self, model, y0, ts, ys, exp_name, base_dir="results", seed=5678):
+    def __init__(self, model, ts, ys, exp_name, base_dir="results", seed=5678):
         #-------- path define --------
         self.exp_dir = os.path.join(base_dir, exp_name)
         self.ckpt_dir = os.path.join(self.exp_dir, "model_parameter")
@@ -121,7 +121,6 @@ class BaseExperiment:
 
         # save data
         self.model = model
-        self.y0 = y0
         self.ts = ts
         self.ys = ys
         self.loss_list = []
@@ -148,7 +147,7 @@ class BaseExperiment:
         ts, ys = self.ts, self.ys
 
         # output : (loss,aux), grad
-        @eqx.filter_value_and_grad(has_aux=True)
+        @eqx.filter_value_and_grad
         def grad_loss(params, static, ts, ys):
             model = eqx.combine(params, static)
             return self.loss_fn(model, ts, ys)
@@ -156,19 +155,19 @@ class BaseExperiment:
         # perform 1 epoch
         def step_fn(carry, _):
             params, opt_state = carry
-            (loss, aux), grads = grad_loss(params, static, ts, ys)
+            loss, grads = grad_loss(params, static, ts, ys)
             updates, opt_state = optim.update(grads, opt_state, params)
             params = eqx.apply_updates(params, updates)
-            return (params, opt_state), (loss, aux)
+            return (params, opt_state), loss
         
         # Use scan for fast training
         @eqx.filter_jit
         def train_scan(params, opt_state, n_steps):
             init_val = (params, opt_state)
-            (params, opt_state), (losses, aux_collection) = jax.lax.scan(
+            (params, opt_state), losses = jax.lax.scan(
                 step_fn, init_val, None, length=n_steps
             )
-            return params, opt_state, losses, aux_collection
+            return params, opt_state, losses
         
         num_cycles = steps // viz_loss #for visualize loss decay
 
@@ -180,12 +179,12 @@ class BaseExperiment:
         for cycle in tqdm(range(num_cycles), desc="Training", ncols=100):
             t0 = time.time()
 
-            params, opt_state, batch_losses, batch_aux = train_scan(
+            params, opt_state, batch_losses = train_scan(
                 params, opt_state, viz_loss
             )
 
-            self.loss_list.append(batch_losses)
-            self.aux_list.append(batch_aux)
+            
+            self.loss_list.extend(batch_losses.tolist())
 
             self.model = eqx.combine(params, static)
 
@@ -200,8 +199,7 @@ class BaseExperiment:
         total_time = time.time() - train_start
         self.logger.info(f"Total time: {total_time/60:.2f} min")
 
-        loss_array = jnp.concatenate(self.loss_list)
-        np.save(self.loss_path, np.array(loss_array))
+        np.save(self.loss_path, np.array(self.loss_list))
 
         self.model = eqx.combine(params, static)
 
