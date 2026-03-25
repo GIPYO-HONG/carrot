@@ -19,7 +19,7 @@ class Dynamics(eqx.Module):
     def __init__(self, hidden_dim, width_size, depth, *, key):
         self.scale = jnp.array(0.1)
         self.mlp = eqx.nn.MLP(
-            in_size=hidden_dim+5,
+            in_size=hidden_dim,
             out_size=hidden_dim,
             width_size=width_size,
             depth=depth,
@@ -35,8 +35,6 @@ class Argphy(eqx.Module):
     hidden_dyn: Dynamics
     hidden_vec: jnp.ndarray
     hidden_to_beta: eqx.nn.Linear
-    
-    state_vec: jnp.ndarray
 
     scales: jnp.ndarray = eqx.field(static=True)
     
@@ -47,8 +45,6 @@ class Argphy(eqx.Module):
         self.hidden_vec = 0.01 * jr.normal(hvec_key, (hidden_dim,))
         self.hidden_to_beta = eqx.nn.Linear(hidden_dim, 1, key=htb_key)
 
-        self.state_vec = jnp.array([5., -5., 0., -5., -5])
-
         self.scales = scales
 
     def get_beta(self, h):
@@ -57,10 +53,7 @@ class Argphy(eqx.Module):
     
     def RHS(self, t, y, args=None):
 
-        state_norm, h = y
-
-        # denormalize state
-        state = state_norm * self.scales
+        state, h = y
 
         S, E, I, A, R = state
 
@@ -78,18 +71,11 @@ class Argphy(eqx.Module):
 
         dstate = jnp.array([dS, dE, dI, dA, dR])
 
-        # normalize derivative
-        dstate_norm = dstate / self.scales
+        dh = self.hidden_dyn(t, h, args)
 
-        dh = self.hidden_dyn(t, jnp.concatenate([h, state_norm]), args)
-
-        return (dstate_norm, dh)
+        return (dstate, dh)
     
-    def __call__(self, y0_ignored, ts):
-        y0_learned = jnn.softmax(self.state_vec)
-
-        # normalize initial condition
-        y0_norm = y0_learned / self.scales
+    def __call__(self, y0, ts):
 
         h0 = self.hidden_vec
 
@@ -99,17 +85,14 @@ class Argphy(eqx.Module):
             t0=ts[0],
             t1=ts[-1],
             dt0=0.001,
-            y0=(y0_norm, h0),
+            y0=(y0, h0),
             saveat=diffrax.SaveAt(ts=ts),
             stepsize_controller=diffrax.PIDController(rtol=1e-3, atol=1e-6),
             adjoint=diffrax.RecursiveCheckpointAdjoint(),
             max_steps=50000,
         )
 
-        states_norm, h = sol.ys
-
-        # denormalize output
-        states = states_norm * self.scales
+        states, h = sol.ys
 
         return states, h
 
@@ -138,20 +121,19 @@ class Experiment(BaseExperiment):
 
     def loss_fn(self, model, ts, ys):
 
-        pred, _ = model(None, ts)
+        pred, _ = model(self.y0, ts)
 
-        loss = jnp.mean((pred[:, 2] - ys.squeeze()) ** 2)
+        loss = jnp.mean((pred - ys) ** 2)
 
         return loss
     
 ########## Evaluation ##########
 
 def Evaluation(EX, ts_eval, loss_list, viz_data=False):
-    ts_data, ys_data, beta, model = EX.ts, EX.ys, EX.beta, EX.model
-    y0=jnp.array([1e+0, 0., 1e-6, 0., 0.])
+    y0, ts_data, ys_data, beta, model = EX.y0, EX.ts, EX.ys, EX.beta, EX.model
 
     ys_eval = get_data(ts_eval, y0, beta)
-    ys_pred, h_pred = model(None, ts_eval)
+    ys_pred, h_pred = model(y0, ts_eval)
 
     beta_eval = EX.beta(ts_eval)
     beta_pred = jax.vmap(model.get_beta)(h_pred)

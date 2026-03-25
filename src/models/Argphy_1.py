@@ -53,7 +53,10 @@ class Argphy(eqx.Module):
     
     def RHS(self, t, y, args=None):
 
-        state, h = y
+        state_norm, h = y
+
+        # denormalize state
+        state = state_norm * self.scales
 
         S, E, I, A, R = state
 
@@ -71,11 +74,17 @@ class Argphy(eqx.Module):
 
         dstate = jnp.array([dS, dE, dI, dA, dR])
 
+        # normalize derivative
+        dstate_norm = dstate / self.scales
+
         dh = self.hidden_dyn(t, h, args)
 
-        return (dstate, dh)
+        return (dstate_norm, dh)
     
     def __call__(self, y0, ts):
+
+        # normalize initial condition
+        y0_norm = y0 / self.scales
 
         h0 = self.hidden_vec
 
@@ -85,14 +94,17 @@ class Argphy(eqx.Module):
             t0=ts[0],
             t1=ts[-1],
             dt0=0.001,
-            y0=(y0, h0),
+            y0=(y0_norm, h0),
             saveat=diffrax.SaveAt(ts=ts),
             stepsize_controller=diffrax.PIDController(rtol=1e-3, atol=1e-6),
             adjoint=diffrax.RecursiveCheckpointAdjoint(),
             max_steps=50000,
         )
 
-        states, h = sol.ys
+        states_norm, h = sol.ys
+
+        # denormalize output
+        states = states_norm * self.scales
 
         return states, h
 

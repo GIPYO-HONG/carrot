@@ -3,11 +3,10 @@ import jax.numpy as jnp
 from models import *
 from models.utiles.data_generation import beta_generate, get_data
 from models.utiles.optim_list import *
-from optax import adamw
 
-exp_name = "scaling_argphy"
+exp_name = "argphy_banila"
 
-model = ap
+model = ap0
 
 beta = beta_generate(5e-1, 0.1, 0.)
 y0 = jnp.array([1e+0, 0., 1e-6, 0., 0.])
@@ -26,4 +25,4 @@ EX = model.Experiment(
 steps = 50000
 
 if __name__=="__main__":
-    EX.train(optimizer= adamw, lr=1e-3, steps=steps)
+    EX.train(lr=1e-3, steps=steps)

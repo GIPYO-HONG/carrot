@@ -4,13 +4,13 @@ from models import *
 from models.utiles.data_generation import beta_generate, get_data
 from models.utiles.optim_list import *
 
-exp_name = "extrapolation_1"
+exp_name = "NODE_extrapolation_front_back"
 
-model = ap2
+model = no
 
 beta = beta_generate(5e-1, 0.1, 0.)
 y0 = jnp.array([1e+0, 0., 1e-6, 0., 0.])
-ts = jnp.linspace(0., 50., 50+1)
+ts = jnp.linspace(120., 240., 240+1)
 ys = get_data(ts, y0, beta.func)
 
 ts_eval = jnp.linspace(0., 365., 365*4+1)
