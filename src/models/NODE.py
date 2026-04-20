@@ -34,21 +34,12 @@ class Beta(eqx.Module):
 class NODE(eqx.Module):
     beta: Beta
 
-    scales: jnp.ndarray = eqx.field(static=True)
-
-    def __init__(self, width_size, depth, scales, *, key):
+    def __init__(self, width_size, depth, *, key):
         self.beta = Beta(width_size, depth, key=key)
-
-        self.scales = scales
 
     def RHS(self, t, y, args=None):
 
-        state_norm = y
-
-        # denormalize state
-        state = state_norm * self.scales
-
-        S, E, I, A, R = state
+        S, E, I, A, R = y
 
         beta = self.beta(t)
 
@@ -64,15 +55,9 @@ class NODE(eqx.Module):
 
         dstate = jnp.array([dS, dE, dI, dA, dR])
 
-        # normalize derivative
-        dstate_norm = dstate / self.scales
-
-        return dstate_norm
+        return dstate
     
     def __call__(self, y0, ts):
-
-        # normalize initial condition
-        y0_norm = y0 / self.scales
 
         sol = diffrax.diffeqsolve(
             diffrax.ODETerm(self.RHS),
@@ -80,25 +65,20 @@ class NODE(eqx.Module):
             t0=ts[0],
             t1=ts[-1],
             dt0=0.001,
-            y0=y0_norm,
+            y0=y0,
             saveat=diffrax.SaveAt(ts=ts),
             stepsize_controller=diffrax.PIDController(rtol=1e-3, atol=1e-6),
             adjoint=diffrax.RecursiveCheckpointAdjoint(),
             max_steps=50000,
         )
 
-        states_norm = sol.ys
-
-        # denormalize output
-        states = states_norm * self.scales
-
-        return states
+        return sol.ys
     
 ########## Experiment ##########
     
 class Experiment(BaseExperiment):
 
-    def __init__(self, ts, ys, beta, width_size=64, depth=2, **kwargs):
+    def __init__(self, ts, y0, ys, beta, width_size=64, depth=2, **kwargs):
 
         seed = kwargs.get("seed", 5678)
 
@@ -108,20 +88,19 @@ class Experiment(BaseExperiment):
         model = NODE(
             width_size,
             depth,
-            scales=self.scales,
             key=jax.random.PRNGKey(seed)
         )
 
         super().__init__(model, ts, ys, **kwargs)
 
-        self.y0 = ys[0]
+        self.y0 = y0
         self.beta = beta
 
     def loss_fn(self, model, ts, ys):
 
         pred = model(self.y0, ts)
 
-        loss = jnp.mean((pred - ys) ** 2)
+        loss = jnp.mean(jnp.square((pred - ys) / self.scales))
 
         return loss
     
