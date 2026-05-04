@@ -20,7 +20,7 @@ EX = model.Experiment(
     exp_name=exp_name,
 )
 
-steps = 50000
+steps = 10000
 
 if __name__=="__main__":
     EX.train(lr=1e-3, steps=steps)

@@ -23,7 +23,7 @@ class Dynamics(eqx.Module):
             width_size=width_size,
             depth=depth,
             activation=lambda x: jnn.softplus(x),
-            final_activation=lambda x: jnn.tanh(x),
+            final_activation=lambda x: jnn.tanh(0.0001*x),
             key=key,
         )
 
@@ -71,7 +71,7 @@ class Argphy(eqx.Module):
         dstate = jnp.array([dTu, dTi, dV])
         dnorm_state = dstate / scale
 
-        dh = self.hidden_dyn(t, jnp.concatenate([h, state]), args)
+        dh = self.hidden_dyn(t, jnp.concatenate([h, norm_state]), args)
 
         return (dnorm_state, dh)
 
@@ -83,17 +83,17 @@ class Argphy(eqx.Module):
 
         sol = diffrax.diffeqsolve(
             diffrax.ODETerm(self.RHS),
-            diffrax.Tsit5(),
-            # diffrax.Kvaerno5(),
+            # diffrax.Tsit5(),
+            diffrax.Kvaerno5(),
             # diffrax.Dopri8(),
             t0=ts[0],
             t1=ts[-1],
             dt0=0.001,
             y0=(norm_y0, h0),
             saveat=diffrax.SaveAt(ts=ts),
-            stepsize_controller=diffrax.PIDController(rtol=1e-2, atol=1e-4),
+            stepsize_controller=diffrax.PIDController(rtol=1e-3, atol=1e-6),
             adjoint=diffrax.RecursiveCheckpointAdjoint(),
-            max_steps=500000,
+            max_steps=50000,
         )
 
         norm_states, h = sol.ys

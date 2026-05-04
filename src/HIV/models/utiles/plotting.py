@@ -29,9 +29,9 @@ def plotting(ts_data, ys_data, ts_eval, ys_eval, ys_pred, eta_eval, eta_pred, lo
     axs[2].set_yscale("log")
     axs[2].legend()
 
-    axs[4].plot(loss_list)
-    axs[4].set_yscale("log")
-    axs[4].set_title("Training Loss")
+    axs[3].plot(loss_list)
+    axs[3].set_yscale("log")
+    axs[3].set_title("Training Loss")
 
     plt.figure(figsize=(5, 5))
     plt.plot(ts_eval, eta_eval, label="True eta")
