@@ -1,8 +1,8 @@
 import jax.numpy as jnp
 
-from models import *
-from models.utiles.data_generation import beta_generate, get_data
-from models.utiles.optim_list import *
+from SEIAR.models import *
+from SEIAR.models.utiles.data_generation import beta_generate, get_data
+from SEIAR.models.utiles.optim_list import *
 
 exp_name = "tmp2"
 
