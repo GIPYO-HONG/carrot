@@ -1,45 +1,32 @@
 import jax.numpy as jnp
-
+import matplotlib.pyplot as plt
 import diffrax
 
 ########## Data generation ##########
-class beta_generate:
-    def __init__(self, b0, b1, shift=0.):
-        self.b0 = b0
-        self.b1 = b1
-        self.shift = shift
+def eta(t):
+    return 9*10**(-5)*(1-0.9*jnp.cos(jnp.pi*t / 1000))
     
-    def func(self, t):
-        return self.b0*(1 + self.b1*jnp.cos(2*jnp.pi*((t/365) - self.shift)))
-    
-def SEIAR(t, y, beta):
+def HIV(t, y, eta):
 
-    kk = 0.526
-    aa = 0.244
-    ii = 0.244
-    p = 0.667
-    f = 0.98
-    ee = 0
-    dd = 1
-    q = 0.5
+    ll = 36
+    rr = 0.108
+    N = 1000
+    dd = 0.5
+    c = 3
 
-    S, E, I, A, R = y
-    bb = beta(t) if callable(beta) else beta
+    Tu, Ti, V = y
+    ee = eta(t) if callable(eta) else eta
 
-    LL = ee*E + (1-q)*I + dd*A
+    dTu = ll - rr*Tu - ee*Tu*V
+    dTi = ee*Tu*V - dd*Ti
+    dV = N*dd*Ti - c*V
 
-    dS = -bb*S*LL
-    dE = bb*S*LL - kk*E
-    dI = p*kk*E - aa*I
-    dA = (1-p)*kk*E - ii*A
-    dR = f*aa*I + ii*A
+    return jnp.array([dTu, dTi, dV])
 
-    return jnp.array([dS, dE, dI, dA, dR])
-
-def get_data(ts, y0, beta):
+def get_data(ts, y0, eta):
 
     def SEIAR_(t, y, args=None):
-        return SEIAR(t, y, beta)
+        return HIV(t, y, eta)
 
     sol = diffrax.diffeqsolve(
         diffrax.ODETerm(SEIAR_),
@@ -54,3 +41,24 @@ def get_data(ts, y0, beta):
         )
     
     return sol.ys
+
+if __name__ == "__main__":
+    y0 = jnp.array([600., 30., 10**5])
+
+    ts = jnp.linspace(0., 20., 20*4+1)
+    ys = get_data(ts, y0, eta)
+
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+
+    axs[0].plot(ts, ys[:, 0], label="T_U")
+    axs[0].legend()
+
+    axs[1].plot(ts, ys[:, 1], label="T_I")
+    axs[1].legend()
+
+    axs[2].plot(ts, ys[:, 2], label="V")
+    axs[2].set_yscale('log')
+    axs[2].legend()
+
+    plt.tight_layout()
+    plt.show()

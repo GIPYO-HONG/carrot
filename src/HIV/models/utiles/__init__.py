@@ -1,12 +1,12 @@
 from .experiment import BaseExperiment
 from .logger import make_logger
-from .data_generation import beta_generate, get_data, SEIAR
+from .data_generation import eta, get_data, HIV
 from .plotting import plotting
 
 __all__ = ["BaseExperiment",
            "make_logger",
-           "beta_generate",
+           "eta",
            "get_data",
-           "SEIAR",
+           "HIV",
            "plotting",
            ]

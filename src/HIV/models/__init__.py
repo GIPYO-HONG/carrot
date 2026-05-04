@@ -1,10 +1,12 @@
-from ...models import ANODE as an
-from ...models import NODE as no
-from ...models import model_tmp as tmp
+from . import ANODE as an
+from . import NODE as no
+from . import model_tmp as tmp
+from .utiles import *
 
 __all__ = ["an",
-           "lo",
            "no",
-           "pn",
-           "tmp"
+           "tmp",
+           "eta",
+           "get_data",
+           "HIV",
            ]
