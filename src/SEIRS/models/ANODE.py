@@ -60,7 +60,7 @@ class Argphy(eqx.Module):
         N = S+E+I+R
 
         mm, dd, r = 0.0003671, 0.0027400, 0.0006762
-        ss, kk, aa, gg = jnn.softplus(self.parameter)
+        ss, kk, aa, gg = jnp.abs(self.parameter)
 
         bb = self.get_beta(h)
 

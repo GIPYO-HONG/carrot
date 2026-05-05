@@ -37,6 +37,8 @@ class Argphy(eqx.Module):
     hidden_to_eta: eqx.nn.Linear
     norm_scale: tuple = eqx.field(static=True)
 
+    parameter: jnp.ndarray
+
     def __init__(self, hidden_dim, width_size, depth, norm_scale, *, key):
         dyn_key, htb_key, hvec_key = jr.split(key, 3)
 
@@ -44,6 +46,8 @@ class Argphy(eqx.Module):
         self.hidden_vec = 0.01 * jr.normal(hvec_key, (hidden_dim,))
         self.hidden_to_eta = eqx.nn.Linear(hidden_dim, 1, key=htb_key)
         self.norm_scale = tuple(norm_scale.tolist())
+
+        self.parameter = jnp.array([20., 1., 1100., 1., 1.])
 
     def get_eta(self, h):
         eta = jnn.sigmoid(self.hidden_to_eta(h))
@@ -58,11 +62,7 @@ class Argphy(eqx.Module):
 
         ee = self.get_eta(h)
 
-        ll = 36.0
-        rr = 0.108
-        N  = 1000.0
-        dd = 0.5
-        c  = 3.0
+        ll, rr, N, dd, c = jnn.softplus(self.parameter)
 
         dTu = ll - rr * Tu - ee * Tu * V
         dTi = ee * Tu * V - dd * Ti
@@ -109,13 +109,17 @@ class Experiment(BaseExperiment):
 
         seed = kwargs.get("seed", 5678)
 
-        self.scales = jnp.max(ys, axis=0) + 1e-6
+        scales_obs = jnp.max(ys, axis=0) + 1e-6  # shape: (2,), [T_max, V_max]
+        self.scales = scales_obs
+
+        # Argphy에는 state (TU, TI, V) 3개 스케일 전달
+        self.norm_scale = jnp.array([scales_obs[0], scales_obs[0], scales_obs[1]])
 
         model = Argphy(
             hidden_dim,
             width_size,
             depth,
-            norm_scale=self.scales,
+            norm_scale=self.norm_scale,
             key=jax.random.PRNGKey(seed),
         )
 
@@ -125,16 +129,24 @@ class Experiment(BaseExperiment):
         self.eta = eta
 
     def loss_fn(self, model, ts, ys):
-        ys_norm = ys / self.scales          # target도 normalize
-        pred, _ = model(self.y0, ts)        # pred는 이미 normalized
-        loss = jnp.mean(jnp.square(pred - ys_norm))  # ★ 괄호 수정
+        pred, _ = model(self.y0, ts)  # normalized, shape: (T, 3)
+
+        # scale[0] == scale[1]이므로 pred[:,0]+pred[:,1] = (TU+TI)/T_max
+        T_pred = pred[:, 0] + pred[:, 1]
+        V_pred = pred[:, 2]
+
+        T_target = ys[:, 0] / self.scales[0]
+        V_target = ys[:, 1] / self.scales[1]
+
+        loss = jnp.mean(jnp.square(T_pred - T_target)) \
+             + jnp.mean(jnp.square(V_pred - V_target))
         return loss
 
 
 ########## Evaluation ##########
 
 def Evaluation(EX, ts_eval, loss_list, viz_data=False):
-    y0, ts_data, ys_data, eta, model, scales = EX.y0, EX.ts, EX.ys, EX.eta, EX.model, EX.scales
+    y0, ts_data, ys_data, eta, model, scales = EX.y0, EX.ts, EX.ys, EX.eta, EX.model, EX.norm_scale
 
     ys_eval  = get_data(ts_eval, y0, eta)
     ys_pred, h_pred = model(y0, ts_eval)

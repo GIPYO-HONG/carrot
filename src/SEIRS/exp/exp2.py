@@ -4,14 +4,14 @@ import os
 from models import *
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-csv_path = os.path.join(BASE_DIR, 'gambia_data.csv')
+csv_path = os.path.join(BASE_DIR, 'influenza_sydney_1919.csv')
 
 df = pd.read_csv(csv_path)
 ys = jnp.array(df['Total_Cases'].values, dtype=jnp.float32)
 
-exp_name = "exp"
+exp_name = "exp2_softplus"
 
-model = an
+model = tmp
 
 ts = jnp.linspace(0., len(ys) - 1, len(ys))
 

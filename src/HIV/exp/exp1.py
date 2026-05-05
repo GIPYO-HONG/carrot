@@ -2,13 +2,18 @@ import jax.numpy as jnp
 
 from models import *
 
-exp_name = "exp"
+exp_name = "exp_given_param"
 
-model = an
+model = tmp
 
 y0 = jnp.array([600., 30., 10**5])
 ts = jnp.linspace(0., 20., 200)
 ys = get_data(ts, y0, eta)
+
+T_data = ys[:,0] + ys[:,1]
+V_data = ys[:,2]
+
+ys = jnp.stack([T_data, V_data], axis=-1)
 
 ts_eval = jnp.linspace(0., 20., 800)
 
