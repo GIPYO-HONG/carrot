@@ -18,4 +18,3 @@ def plotting(ts_data, ys_data, ts_eval, ys_pred, beta_pred, loss_list, viz_data)
 
     axs[2].plot(ts_eval, beta_pred, label="Pred beta", linestyle="--")
     axs[2].legend()
-    axs[2].show()
