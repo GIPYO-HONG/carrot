@@ -81,6 +81,9 @@ if __name__ == "__main__":
     ts_eval = jnp.linspace(0, 12*4, 12*4+1)
     ys_eval = get_data(ts_eval, y0_eval, beta_eval, scale=12)
 
-    plt.figure(figsize=(5, 5))
-    plt.plot(ts_eval, ys_eval[:,6]+ys_eval[:,7]+ys_eval[:,8]+ys_eval[:,9])
-    plt.show()
+    # plt.figure(figsize=(5, 5))
+    # plt.plot(ts_eval, ys_eval[:,6]+ys_eval[:,7]+ys_eval[:,8]+ys_eval[:,9])
+    # plt.plot(ts_eval[2*4], ys_eval[2*4,6], '.')
+    # plt.show()
+
+    print(ys_eval[3,:])
